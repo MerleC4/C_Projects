@@ -1,0 +1,116 @@
+#! /bin/bash
+# File: testCode
+# Author: Merle Crutchfield
+# Purpose: This is used as a bash script for grading an executable versus the outputs it is
+# suppose to have from different testcases. It takes in two arguments, the program name and
+# the test case directory. It then prints out information on stdout, return code, stderr,
+# and valgrind and memory.
+
+PROGINPUT=$1
+TESTINPUT=$2
+DIRECTORY=$(pwd)
+
+
+if [ -z $PROGINPUT ]; then
+	read PROGINPUT
+fi
+
+if [ -z $PROGINPUT ]; then
+	echo "Incorrect usage. Must supply an executable to test and a directory of testcases"
+	exit 1
+fi
+
+PROGRAM=${PROGINPUT##*/}
+EXECUTABLE=ex_${PROGRAM}
+
+
+if [ -z $TESTINPUT ]; then
+	read TESTINPUT
+fi
+
+if [ ! -d $TESTINPUT ]; then
+	echo "ERROR: Invalid directory"
+	exit 1
+fi
+
+if [ -z $TESTINPUT ]; then
+	echo "Incorrect usage. Must supply an executable to test and a directory of testcases"
+	exit 1
+fi
+
+pushd $TESTINPUT > /dev/null
+
+if [[ ! -x $EXECUTABLE ]]; then
+	echo "ERROR: Reference is not executable"
+	exit 1
+fi
+
+
+TESTS=$(ls -1 test_${PROGRAM}*)
+
+
+for TEST in $TESTS; do
+
+	{
+	timeout 2s ${DIRECTORY}/${PROGRAM} < ${TEST} > myOut 2> myErr
+	} &> /dev/null
+	TIMEOUT=$?
+	
+	if [ $TIMEOUT -ge 128 ]; then
+		echo "*** testcase: ${TEST} [ FAILED – Abnormal termination ]"
+	
+	elif [ $TIMEOUT -eq 124 ]; then
+		echo "*** testcase: ${TEST} [ FAILED – Timed out ]"
+	
+	else
+		
+		$EXECUTABLE < ${TEST} > exOut 2> exErr
+		RETURN=$?
+		
+		diff myOut exOut > /dev/null
+		DIFFRESULT=$?
+		if [ $DIFFRESULT -eq 0 ]; then
+			echo "*** testcase: ${TEST} [ stdout - PASSED ]"
+		else
+			echo "*** testcase: ${TEST} [ stdout - FAILED ]"
+		fi
+		
+		if [ $TIMEOUT -eq $RETURN ]; then
+			echo "*** testcase: ${TEST} [ return code - PASSED ]"
+		else
+			echo "*** testcase: ${TEST} [ return code - FAILED ]"
+		fi
+		
+		if [ -s myErr ]; then
+			if [ -s exErr ]; then
+				echo "*** testcase: ${TEST} [ stderr - PASSED ]"
+			else
+				echo "*** testcase: ${TEST} [ stderr - FAILED ]"
+			fi
+		else
+			if [ -s exErr ]; then
+				echo "*** testcase: ${TEST} [ stderr - FAILED ]"
+			else
+				echo "*** testcase: ${TEST} [ stderr - PASSED ]"
+			fi
+		fi
+		
+
+		valgrind --error-exitcode=123 ${DIRECTORY}/${PROGRAM} < $TEST &> valgrindOut
+		VALRETURN=$?
+		if [ $VALRETURN -eq 123 ]; then
+			echo "*** testcase: ${TEST} [ valgrind - FAILED ]"
+		else
+			echo "*** testcase: ${TEST} [ valgrind - PASSED ]"
+		fi
+		
+		grep -i "All heap blocks were freed -- no leaks are possible" < valgrindOut > memOut
+		if [ -s memOut ]; then
+			echo "*** testcase: ${TEST} [ memory free - PASSED ]"
+		else
+			echo "*** testcase: ${TEST} [ memory free - FAILED ]"
+		fi
+	fi
+
+done
+popd >/dev/null
